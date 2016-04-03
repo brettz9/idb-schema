@@ -1,9 +1,14 @@
 {
   "name": "idb-schema",
-  "description": "IndexedDB schema manager",
-  "repository": "treojs/idb-schema",
   "version": "3.2.1",
+  "description": "IndexedDB schema manager",
+  "repository": "https://github.com/treojs/idb-schema",
+  "bugs": "https://github.com/treojs/idb-schema/issues",
+  "homepage": "https://github.com/treojs/idb-schema",
+  "author": "treojs",
+  "contributors": ["Brett Zamir"],
   "license": "MIT",
+  "engines": {},
   "main": "lib/index.js",
   "files": [
     "lib"
