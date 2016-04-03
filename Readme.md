@@ -10,14 +10,19 @@
 
 This modules provides declarative schema management API for IndexedDB.
 And it also fixes inconsistency between browsers:
+
 - [Incorrect value of oldVersion in Safari](https://bugs.webkit.org/show_bug.cgi?id=136888) during `onupgradeneeded` event
-- [InvalidAccessError in Internet Explorer](https://msdn.microsoft.com/en-us/library/hh772493(v=vs.85).aspx), when autoIncrement or keyPath are `false`
+- [InvalidAccessError in Internet Explorer](https://msdn.microsoft.com/en-us/library/hh772493(v=vs.85).aspx),
+  when `autoIncrement` or `keyPath` are `false`
 
 ## Installation
 
-    npm install --save idb-schema
+```shell
+npm install --save idb-schema
+```
 
-Use [IndexedDBShim](https://github.com/axemclion/IndexedDBShim) to fallback to WebSQL.
+Use [IndexedDBShim](https://github.com/axemclion/IndexedDBShim) to fallback
+to WebSQL.
 
 ## Example
 
@@ -120,18 +125,19 @@ Get JSON representation of database schema.
 ]
 ```
 
-### schema.version([number])
+### schema.version(\[number])
 
 Get current version or set new version to `number` and reset current store.
 Use it to separate migrations on time.
 
-### schema.addStore(name, [opts])
+### schema.addStore(name, \[opts])
 
 Create object store with `name`.
 
 Options:
-* `key` || `keyPath` - primary key (default: null)
-* `increment` || `autoIncrement` - increment key automatically (default: false)
+
+- `key` || `keyPath` - primary key (default: null)
+- `increment` || `autoIncrement` - increment key automatically (default: false)
 
 ### schema.delStore(name)
 
@@ -142,13 +148,14 @@ Delete store by `name`.
 Switch current store.
 Use it to make operations with indexes.
 
-### schema.addIndex(name, field, [opts])
+### schema.addIndex(name, field, \[opts])
 
 Create index with `name` and to `field` (or array of fields).
 
 Options:
-* `unique` - (default: false)
-* `multi` || `multiEntry` - (default: false)
+
+- `unique` - (default: false)
+- `multi` || `multiEntry` - (default: false)
 
 ### schema.delIndex(name)
 

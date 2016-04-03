@@ -1,3 +1,5 @@
+# History
+
 ## 3.2.1 / 2015-11-29
 
 * remove `component-clone` as deps,
@@ -10,7 +12,9 @@
 
 ## 3.1.1 / 2015-11-19
 
-* compile with [add-module-exports](https://github.com/59naga/babel-plugin-add-module-exports) to provide ES6 modules and CommonJS support (related with [idb-range#2](https://github.com/treojs/idb-range/issues/2) and [treo#38](https://github.com/treojs/treo/pull/38))
+* compile with [add-module-exports](https://github.com/59naga/babel-plugin-add-module-exports)
+  to provide ES6 modules and CommonJS support (related with [idb-range#2](https://github.com/treojs/idb-range/issues/2)
+  and [treo#38](https://github.com/treojs/treo/pull/38))
 
 ## 3.1.0 / 2015-11-13
 
