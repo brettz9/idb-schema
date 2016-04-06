@@ -18,7 +18,7 @@
   "scripts": {
     "prepublish": "babel src --out-dir lib",
     "test:local": "eslint src/ test/ && browserify-test -t babelify",
-    "test": "npm run test:local && SAUCE_USERNAME=idb-schema zuul --tunnel-host http://treojs.com --no-coverage -- test/index.js",
+    "test": "npm run test:local && pwd &&  printf \"sauce_username: %s\\nsauce_key: %s\" \"$SAUCE_USERNAME\" \"$SAUCE_ACCESS_KEY\"  > ./.zuulrc && zuul --tunnel-host http://treojs.com --no-coverage -- test/index.js",
     "development": "browserify-test -t babelify --watch"
   },
   "dependencies": {
