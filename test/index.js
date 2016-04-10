@@ -2,7 +2,7 @@ import 'indexeddbshim'
 import ES6Promise from 'es6-promise'
 import { expect } from 'chai'
 import { pluck, toArray } from 'lodash'
-import { del, open } from 'idb-factory'
+import { del, open } from '../src/idb-factory'
 import { request } from 'idb-request'
 import Schema from '../src'
 
@@ -13,7 +13,16 @@ describe('idb-schema', function idbSchemaTest() {
   let db
 
   before(() => del(dbName))
-  afterEach(() => del(db || dbName))
+  afterEach(() => {
+    new Schema().flushIncomplete(dbName)
+    return new Promise((res) => {
+      setTimeout(() => {
+        res(del(db || dbName).catch((err) => {
+          return err.resume
+        }))
+      }, 500)
+    })
+  })
 
   it('describes database', () => {
     const schema = new Schema()
@@ -62,6 +71,7 @@ describe('idb-schema', function idbSchemaTest() {
 
       return request(users.count()).then((count) => {
         expect(count).equal(3)
+        db.close()
       })
     })
   })
@@ -99,6 +109,7 @@ describe('idb-schema', function idbSchemaTest() {
 
           const magazines = db.transaction(['magazines'], 'readonly').objectStore('magazines')
           expect(toArray(magazines.indexNames)).eql(['byFrequency'])
+          db.close()
         })
       })
     })
@@ -166,5 +177,268 @@ describe('idb-schema', function idbSchemaTest() {
     // delIndex
     expect(() => schema.delIndex('')).throws('"name" is required')
     expect(() => schema.delIndex('byField')).throws('"byField" index is not defined')
+  })
+
+  it('completes upgrade allowing for asynchronous callbacks', () => {
+    let caught = false
+    const schema = new Schema()
+    .version(1)
+      .addStore('books', { keyPath: 'isbn' })
+      .addCallback((dbr) => {
+        const books = dbr.transaction(['books'], 'readwrite').objectStore('books')
+        return new Promise((resolve) => {
+          books.put({ name: 'World Peace through World Language', isbn: '1111111111' })
+          setTimeout(() => {
+            const books2 = dbr.transaction(['books'], 'readwrite').objectStore('books')
+            books2.put({ name: '1984', isbn: '2222222222' })
+            resolve()
+          }, 1000) // Ensure will not run before onsuccess if idb-schema code fails to wait for this promise
+        })
+      })
+    .version(2)
+      .addCallback((dbr) => {
+        const trans = dbr.transaction(['books'], 'readwrite')
+        const books = trans.objectStore('books')
+        return new Promise((resolve) => {
+          books.put({ name: 'History of the World', isbn: '1234567890' })
+          setTimeout(() => {
+            const books2 = dbr.transaction(['books'], 'readwrite').objectStore('books')
+            books2.put({ name: 'Mysteries of Life', isbn: '2234567890' })
+            resolve()
+          }, 1000) // Ensure will not run before onsuccess if idb-schema code fails to wait for this promise
+        })
+      })
+      .addCallback((dbr) => {
+        const books = dbr.transaction(['books'], 'readwrite').objectStore('books')
+        books.put({ name: 'Beginner Chinese', isbn: '3234567890' })
+        return new Promise((resolve) => {
+          setTimeout(() => {
+            caught = true
+            resolve()
+          }, 1000) // Ensure will not run before onsuccess if idb-schema code fails to wait for this promise
+        })
+      })
+      .addStore('journals')
+    .version(3)
+      .addStore('magazines')
+
+    return schema.open(dbName, 3).then(function opened(originDb) {
+      db = originDb
+      const trans = db.transaction(['books', 'magazines'])
+      const store = trans.objectStore('books')
+
+      let missingStore = false
+      try {
+        trans.objectStore('magazines')
+      } catch (err) {
+        missingStore = true
+      }
+      expect(missingStore).equal(false)
+      expect(caught).equal(true)
+      return new Promise((resolve) => {
+        const req1a = store.get('1111111111')
+        req1a.onsuccess = e1a => {
+          expect(e1a.target.result.name).equal('World Peace through World Language')
+          const req1b = store.get('2222222222')
+          req1b.onsuccess = e1b => {
+            expect(e1b.target.result.name).equal('1984')
+            const req2a = store.get('1234567890')
+            req2a.onsuccess = e2a => {
+              expect(e2a.target.result.name).equal('History of the World')
+              const req2b = store.get('2234567890')
+              req2b.onsuccess = e2b => {
+                expect(e2b.target.result.name).equal('Mysteries of Life')
+                const req2c = store.get('3234567890')
+                req2c.onsuccess = e2c => {
+                  expect(e2c.target.result.name).equal('Beginner Chinese')
+                  db.close()
+                  resolve()
+                }
+              }
+            }
+          }
+        }
+      })
+    })
+  })
+
+  it('allows schema.upgrade to close connection', () => {
+    const schema = new Schema()
+    .version(1)
+      .addStore('books', { keyPath: 'isbn' })
+      .addCallback((dbr) => {
+        return new Promise((resolve) => {
+          const trans = dbr.transaction(['books'], 'readwrite')
+          const books = trans.objectStore('books')
+          books.put({ name: 'World Peace through World Language', isbn: '1111111111' })
+          setTimeout(() => {
+            const books2 = dbr.transaction(['books'], 'readwrite').objectStore('books')
+            books2.put({ name: '1984', isbn: '2222222222' })
+            resolve()
+          }, 1000) // Ensure will not run before onsuccess if idb-schema code fails to wait for this promise
+        })
+      })
+    return schema.upgrade(dbName, 3).then((noDb) => {
+      expect(noDb).equal(undefined)
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          open(dbName, 3).then((dbr) => {
+            expect(dbr.close).a('function')
+            const trans = dbr.transaction('books')
+            const store = trans.objectStore('books')
+            const req1a = store.get('1111111111')
+            req1a.onsuccess = e1a => {
+              expect(e1a.target.result.name).equal('World Peace through World Language')
+              const req1b = store.get('2222222222')
+              req1b.onsuccess = e1b => {
+                expect(e1b.target.result.name).equal('1984')
+                dbr.close()
+                resolve()
+              }
+            }
+          })
+        }, 200)
+      })
+    })
+  })
+
+  it('allows user to resume after a bad schema.upgrade (bad sync callback)', () => {
+    let ct = 0
+    let resumedOk = false
+    let caught = false
+    let secondRan = false
+    const schema = new Schema()
+    .version(1)
+      .addStore('books', { keyPath: 'isbn' })
+      .addCallback((/* dbr */) => {
+        ct++
+        if (ct % 2) throw new Error('bad callback')
+        resumedOk = true
+      })
+      .addCallback(() => {
+        expect(resumedOk).equal(true)
+        secondRan = true
+      })
+    return schema.upgrade(dbName).catch((err) => {
+      expect(err.message).equal('bad callback')
+      caught = true
+      return err.retry()
+    }).then((missingDb) => {
+      expect(ct).equal(2)
+      expect(caught).equal(true)
+      expect(secondRan).equal(true)
+      expect(missingDb).equal(undefined)
+    })
+  })
+
+  it('allows user to resume after a bad schema.upgrade (bad async callback)', () => {
+    let ct = 0
+    let firstRan = false
+    let thirdRan = false
+    let caught = false
+    const schema = new Schema()
+    .version(1)
+      .addStore('books', { keyPath: 'isbn' })
+      .addCallback(() => {
+        firstRan = true
+      })
+      .addCallback((/* dbr */) => {
+        return new Promise((res, rej) => {
+          setTimeout(() => {
+            ct++
+            if (ct % 2) rej('bad async callback')
+            else res('ok')
+          })
+        })
+      })
+      .addCallback(() => {
+        thirdRan = true
+      })
+    return schema.upgrade(dbName).catch((err) => {
+      expect(err.message).equal('bad async callback')
+      expect(firstRan).equal(true)
+      expect(thirdRan).equal(false)
+      caught = true
+      return err.retry()
+    }).then((missingDb) => {
+      expect(thirdRan).equal(true)
+      expect(caught).equal(true)
+      expect(ct).equal(2)
+      expect(missingDb).equal(undefined)
+    })
+  })
+
+  it('allows user to resume after schema.upgrade is tried twice', () => {
+    let ct = 0
+    let firstRan = false
+    let thirdRan = false
+    let caught = false
+    const schema = new Schema()
+    .version(1)
+      .addStore('books', { keyPath: 'isbn' })
+      .addCallback(() => {
+        firstRan = true
+      })
+      .addCallback((/* dbr */) => {
+        return new Promise((res, rej) => {
+          setTimeout(() => {
+            ct++
+            if (ct % 2) rej('bad async callback')
+            else res('ok')
+          })
+        })
+      })
+      .addCallback(() => {
+        thirdRan = true
+      })
+    return schema.upgrade(dbName).catch((err) => {
+      expect(err.message).equal('bad async callback')
+      expect(firstRan).equal(true)
+      expect(thirdRan).equal(false)
+      caught = true
+    }).then(() => {
+      expect(JSON.parse(localStorage.getItem('idb-incompleteUpgrades'))[dbName].version).equal(1)
+      schema.upgrade(dbName).catch((err) => {
+        return err.retry()
+      }).then(() => {
+        expect(JSON.parse(localStorage.getItem('idb-incompleteUpgrades'))[dbName]).equal(undefined)
+        expect(thirdRan).equal(true)
+        expect(caught).equal(true)
+        expect(ct).equal(2)
+      })
+    })
+  })
+
+  it('allows user to resume after a bad schema.open', () => {
+    let ct = 0
+    let firstRan = false
+    let thirdRan = false
+    let caught = false
+    const schema = new Schema()
+    .version(1)
+      .addStore('books', { keyPath: 'isbn' })
+      .addCallback(() => {
+        firstRan = true
+      })
+      .addCallback((/* dbr */) => {
+        ct++
+        if (ct % 2) throw new Error('bad callback')
+        else return Promise.resolve('resumed ok')
+      })
+      .addCallback(() => {
+        thirdRan = true
+      })
+    return schema.open(dbName).catch((err) => {
+      expect(err.message).equal('bad callback')
+      expect(firstRan).equal(true)
+      expect(thirdRan).equal(false)
+      caught = true
+      return err.retry()
+    }).then((originDb) => {
+      originDb.close()
+      expect(thirdRan).equal(true)
+      expect(caught).equal(true)
+      expect(ct).equal(2)
+    })
   })
 })

@@ -1,3 +1,12 @@
+## 4.3.0
+
+* Breaking change (minor): Ensure `version()` returns highest version
+  regardless of order added in
+* Feature: Add `open` and `upgrade` methods to allow a sequence of upgrades
+  which can support promises returned by `addCallback` callbacks (and a
+  `flushIncomplete` method for flushing storage pertaining to incomplete
+  upgrades)
+
 ## 3.2.1 / 2015-11-29
 
 * remove `component-clone` as deps,
