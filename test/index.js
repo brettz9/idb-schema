@@ -210,6 +210,27 @@ describe('idb-schema', function idbSchemaTest() {
     })
   })
 
+  it('supports an object store argument supplied to getStore', () => {
+    const schema = new Schema()
+    .version(1)
+      .addStore('books')
+    .version(2)
+      .addEarlyCallback(function ecb(e) {
+        const tr = e.target.transaction
+        const os = tr.objectStore('books')
+        schema.getStore(os)
+        schema.addIndex('byYear', 'year')
+      })
+    return open(dbName, schema.version(), schema.callback()).then((originDb) => {
+      db = originDb
+      const trans = db.transaction(['books'])
+      const store = trans.objectStore('books')
+      expect(store.name).equal('books')
+      expect(store.indexNames.contains('byYear')).equal(true)
+      originDb.close()
+    })
+  })
+
   it('completes upgrade allowing for asynchronous callbacks', () => {
     let caught = false
     const schema = new Schema()

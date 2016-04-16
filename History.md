@@ -19,6 +19,7 @@
 * Feature: Add `addEarlyCallback` to allow use of `idb-schema` methods
   within these synchronous callbacks
 * Feature: Support `errBack` argument to `callback`
+* Feature: Support object store argument supplied to `getStore`
 
 ## 3.2.1 / 2015-11-29
 

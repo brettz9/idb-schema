@@ -240,6 +240,9 @@ return open(dbName, schema.version(), schema.callback()).catch((err) => {
 Switch current store.
 Use it to make operations with indexes.
 
+This can be the name of a store, or it can also be an actual IndexedDB
+store object.
+
 ### schema.addIndex(name, field, [opts])
 
 Create index with `name` and to `field` (or array of fields).

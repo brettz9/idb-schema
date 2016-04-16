@@ -119,8 +119,28 @@ export default class Schema {
    */
 
   getStore(name) {
+    if (name && typeof name === 'object' && 'name' in name && 'indexNames' in name) {
+      const storeObj = name
+      name = storeObj.name
+      const store = {
+        name: name,
+        indexes: Array.from(storeObj.indexNames).reduce((obj, iName) => {
+          const indexObj = storeObj.index(iName)
+          obj[iName] = {
+            name: iName,
+            storeName: name,
+            field: indexObj.keyPath,
+            unique: indexObj.unique,
+            multiEntry: indexObj.multiEntry,
+          }
+          return obj
+        }, {}),
+        keyPath: storeObj.keyPath,
+        autoIncrement: storeObj.autoIncrement,
+      }
+      this._stores[name] = store
+    }
     if (typeof name !== 'string') throw new DOMException('"name" is required', 'NotFoundError')
-
     if (!this._stores[name]) throw new TypeError(`"${name}" store is not defined`)
     this._current.store = this._stores[name]
     return this
