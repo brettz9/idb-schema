@@ -5,6 +5,10 @@
   which is still existing but was not added by idb-schema). (If `delStore`
   does throw later (or if there is any other upgrade error), the error
   can now be caught by `callback` or `open`/`upgrade`.)
+* API change: During upgrades, stores and indexes slated for deletion will
+  be deleted before those slated for creation (allowing one to rebuild a
+  store or index--bearing in mind that rebuilding a store will not preserve
+  its data)
 * Fix: Allow stores, indexes, and store `keyPath`s to be an empty string
 * Fix: Allow `autoIncrement` with non-empty string `keyPath`s but disallow
   arrays and empty string

@@ -516,6 +516,10 @@ function upgradeVersion(versionSchema, e, oldVersion) {
     cb(e)
   })
 
+  versionSchema.dropStores.forEach((s) => {
+    db.deleteObjectStore(s.name)
+  })
+
   versionSchema.stores.forEach((s) => {
     // Only pass the options that are explicitly specified to createObjectStore() otherwise IE/Edge
     // can throw an InvalidAccessError - see https://msdn.microsoft.com/en-us/library/hh772493(v=vs.85).aspx
@@ -525,8 +529,8 @@ function upgradeVersion(versionSchema, e, oldVersion) {
     db.createObjectStore(s.name, opts)
   })
 
-  versionSchema.dropStores.forEach((s) => {
-    db.deleteObjectStore(s.name)
+  versionSchema.dropIndexes.forEach((i) => {
+    tr.objectStore(i.storeName).deleteIndex(i.name)
   })
 
   versionSchema.indexes.forEach((i) => {
@@ -534,9 +538,5 @@ function upgradeVersion(versionSchema, e, oldVersion) {
       unique: i.unique,
       multiEntry: i.multiEntry,
     })
-  })
-
-  versionSchema.dropIndexes.forEach((i) => {
-    tr.objectStore(i.storeName).deleteIndex(i.name)
   })
 }
