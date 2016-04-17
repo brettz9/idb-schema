@@ -97,9 +97,12 @@ export default class Schema {
 
   delStore(name) {
     if (typeof name !== 'string' || !name) throw new TypeError('"name" is required')
-    const store = this._stores[name]
-    if (!store) throw new TypeError(`"${name}" store is not defined`)
-    delete this._stores[name]
+    let store = this._stores[name]
+    if (store) {
+      delete this._stores[name]
+    } else {
+      store = { name: name }
+    }
     this._versions[this.version()].dropStores.push(store)
     this._current.store = null
     return this
@@ -398,14 +401,22 @@ export default class Schema {
    * @return {Function}
    */
 
-  callback() {
+  callback(errBack) {
     const versions = values(this._versions).sort((a, b) => a.version - b.version)
-    return upgradeneeded((e, ...dbInfo) => {
-      versions.forEach((versionSchema) => {
-        upgradeVersion(versionSchema, e, ...dbInfo)
-        versionSchema.callbacks.forEach((cb) => {
-          cb(e)
-        })
+    return upgradeneeded((e, oldVersion) => {
+      versions.some((versionSchema) => {
+        try {
+          upgradeVersion(versionSchema, e, oldVersion)
+          versionSchema.callbacks.forEach((cb) => {
+            cb(e)
+          })
+        } catch (err) {
+          if (errBack) {
+            errBack(err, e)
+            return true
+          }
+          throw err
+        }
       })
     })
   }
@@ -467,14 +478,15 @@ function clone(obj) {
 function upgradeneeded(cb) {
   return (e) => {
     const oldVersion = e.oldVersion > MAX_VERSION ? 0 : e.oldVersion // Safari bug: https://bugs.webkit.org/show_bug.cgi?id=136888
-    const db = e.target.result
-    const tr = e.target.transaction
-    cb(e, oldVersion, db, tr)
+    cb(e, oldVersion)
   }
 }
 
-function upgradeVersion(versionSchema, e, oldVersion, db, tr) {
+function upgradeVersion(versionSchema, e, oldVersion) {
   if (oldVersion >= versionSchema.version) return
+
+  const db = e.target.result
+  const tr = e.target.transaction
 
   versionSchema.earlyCallbacks.forEach((cb) => {
     cb(e)

@@ -163,7 +163,6 @@ describe('idb-schema', function idbSchemaTest() {
 
     // delStore
     expect(() => new Schema().delStore()).throws('"name" is required')
-    expect(() => new Schema().delStore('books')).throws('"books" store is not defined')
 
     // getStore
     expect(() => new Schema().getStore()).throws('"name" is required')
@@ -178,6 +177,25 @@ describe('idb-schema', function idbSchemaTest() {
     // delIndex
     expect(() => schema.delIndex('')).throws('"name" is required')
     expect(() => schema.delIndex('byField')).throws('"byField" index is not defined')
+  })
+
+  it('allows bad delStore to be catchable', () => {
+    let ranErrBack = false
+    const schema = new Schema()
+    .version(1)
+      .delStore('nonexistentStore')
+    return open(dbName, schema.version(), schema.callback(function errBack(err /* , e */) {
+      ranErrBack = true
+      throw err
+    })).catch((err) => {
+      expect(err.name).equal('NotFoundError')
+      expect(ranErrBack).equal(true)
+
+      const schema2 = new Schema().version(2).delStore('nonexistentStore')
+      return open(dbName, schema2.version(), schema2.callback()).catch((err2) => {
+        expect(err2.name).equal('NotFoundError')
+      })
+    })
   })
 
   it('completes upgrade allowing for asynchronous callbacks', () => {

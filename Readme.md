@@ -58,7 +58,7 @@ schema.stores()
 
 ## API
 
-### schema.callback()
+### schema.callback([errBack])
 
 Generate `onupgradeneeded` callback.
 
@@ -73,6 +73,22 @@ req.onsuccess = (e) => {
 Note that this callback will not support `addCallback` callbacks if they rely
 on promises and run transactions (since `upgradeneeded`'s transaction will
 expire). You can instead use `schema.open` or `schema.upgrade`.
+
+`callback` takes an optional `errBack` function which is passed an error
+object (upon encountering any errors during the upgrade) as well as the
+`upgradeneeded` event.
+
+```js
+const schema = new Schema().version(1).delStore('nonexistentStore')
+open(dbName, schema.version(), schema.callback(function errBack(err /* , e */) {
+  throw new Error('Bad upgrade')
+})).catch((err) => {
+  console.log(err.message) // 'Bad upgrade'
+})
+```
+
+If no `errBack` is provided, the error responsible will be thrown and can
+be caught by the consuming code.
 
 ### schema.open(dbName, [version])
 
@@ -206,6 +222,18 @@ Options:
 ### schema.delStore(name)
 
 Delete store by `name`.
+
+Note that if a non-existent store is provided, this method will
+not immediately throw (since it is possible one may wish to use this
+for deleting stores added prior to using `idb-schema`). You will be
+able to catch the errors, however:
+
+```js
+const schema = new Schema().version(1).delStore('nonexistentStore')
+return open(dbName, schema.version(), schema.callback()).catch((err) => {
+  console.log(err.name) // 'NotFoundError'
+})
+```
 
 ### schema.getStore(name)
 

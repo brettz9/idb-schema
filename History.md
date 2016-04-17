@@ -1,11 +1,19 @@
-## 3.3.0
+## 4.0.0
 
+* Breaking API change (minor)/Feature: `delStore` will no longer throw upon
+  being called with a store not present (in case one wishes to delete a store
+  which is still existing but was not added by idb-schema). (If `delStore`
+  does throw later (or if there is any other upgrade error), the error
+  can now be caught by `callback` or `open`/`upgrade`.)
+* Feature: Allow `delStore` to pass in name not present within schema (in
+  case added previously).
 * Feature: Add `open` and `upgrade` methods to allow a sequence of upgrades
   which can support promises returned by `addCallback` callbacks (and a
   `flushIncomplete` method for flushing storage pertaining to incomplete
   upgrades)
 * Feature: Add `addEarlyCallback` to allow use of `idb-schema` methods
   within these synchronous callbacks
+* Feature: Support `errBack` argument to `callback`
 
 ## 3.2.1 / 2015-11-29
 
