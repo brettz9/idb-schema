@@ -159,7 +159,9 @@ describe('idb-schema', function idbSchemaTest() {
     expect(() => new Schema().addStore(101)).throws('"name" is required')
     expect(() => new Schema().addStore(101)).throws('"name" is required')
     expect(() => schema.addStore('books')).throws('"books" store is already defined')
-    expect(() => new Schema().addStore('books', { autoIncrement: true })).throws('set keyPath in order to use autoIncrement')
+    expect(() => new Schema().addStore('books', { autoIncrement: true, keyPath: '' })).throws('keyPath must not be the empty string or a sequence if autoIncrement is in use')
+    expect(() => new Schema().addStore('books', { autoIncrement: true, keyPath: [] })).throws('keyPath must not be the empty string or a sequence if autoIncrement is in use')
+    expect(() => new Schema().addStore('books', { autoIncrement: true, keyPath: ['isbn'] })).throws('keyPath must not be the empty string or a sequence if autoIncrement is in use')
 
     // delStore
     expect(() => new Schema().delStore()).throws('"name" is required')
@@ -175,8 +177,18 @@ describe('idb-schema', function idbSchemaTest() {
     expect(() => schema.addIndex('byTitle', 'title')).throws('"byTitle" index is already defined')
 
     // delIndex
-    expect(() => schema.delIndex('')).throws('"name" is required')
+    expect(() => schema.delIndex()).throws('"name" is required')
     expect(() => schema.delIndex('byField')).throws('"byField" index is not defined')
+  })
+
+  it('permissible edge cases', () => {
+    expect(() => new Schema().addStore('books', { autoIncrement: true, keyPath: 'isbn' })).not.throws()
+    expect(() => new Schema().addStore('books', { keyPath: '' })).not.throws()
+    expect(() => new Schema().addStore('')).not.throws()
+
+    const schema = new Schema().addStore('books')
+    expect(() => schema.addIndex('', 'title')).not.throws()
+    expect(() => schema.addIndex('author', '')).not.throws()
   })
 
   it('allows bad delStore to be catchable', () => {

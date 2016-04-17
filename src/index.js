@@ -68,17 +68,20 @@ export default class Schema {
    */
 
   addStore(name, opts = {}) {
-    if (typeof name !== 'string' || !name) throw new TypeError('"name" is required')
-    if (this._stores[name]) throw new TypeError(`"${name}" store is already defined`)
+    if (typeof name !== 'string') throw new TypeError('"name" is required') // idb-schema requirement
+    if (this._stores[name]) throw new DOMException(`"${name}" store is already defined`, 'ConstraintError')
 
     const store = {
       name: name,
       indexes: {},
-      keyPath: opts.key || opts.keyPath || null,
+      keyPath: opts.key || opts.keyPath,
       autoIncrement: opts.increment || opts.autoIncrement || false,
     }
-    if (store.autoIncrement && !store.keyPath) {
-      throw new TypeError('set keyPath in order to use autoIncrement')
+    if (!store.keyPath && store.keyPath !== '') {
+      store.keyPath = null
+    }
+    if (store.autoIncrement && (store.keyPath === '' || Array.isArray(store.keyPath))) {
+      throw new DOMException('keyPath must not be the empty string or a sequence if autoIncrement is in use', 'InvalidAccessError')
     }
 
     this._stores[name] = store
@@ -96,7 +99,7 @@ export default class Schema {
    */
 
   delStore(name) {
-    if (typeof name !== 'string' || !name) throw new TypeError('"name" is required')
+    if (typeof name !== 'string') throw new TypeError('"name" is required') // idb-schema requirement
     let store = this._stores[name]
     if (store) {
       delete this._stores[name]
@@ -116,7 +119,8 @@ export default class Schema {
    */
 
   getStore(name) {
-    if (typeof name !== 'string' || !name) throw new TypeError('"name" is required')
+    if (typeof name !== 'string') throw new DOMException('"name" is required', 'NotFoundError')
+
     if (!this._stores[name]) throw new TypeError(`"${name}" store is not defined`)
     this._current.store = this._stores[name]
     return this
@@ -132,13 +136,13 @@ export default class Schema {
    */
 
   addIndex(name, field, opts = {}) {
-    if (typeof name !== 'string' || !name) throw new TypeError('"name" is required')
+    if (typeof name !== 'string') throw new TypeError('"name" is required') // idb-schema requirement
     if (typeof field !== 'string' && !Array.isArray(field)) {
-      throw new TypeError('"field" is required')
+      throw new SyntaxError('"field" is required')
     }
     const store = this._current.store
     if (!store) throw new TypeError('set current store using "getStore" or "addStore"')
-    if (store.indexes[name]) throw new TypeError(`"${name}" index is already defined`)
+    if (store.indexes[name]) throw new DOMException(`"${name}" index is already defined`, 'ConstraintError')
 
     const index = {
       name: name,
@@ -161,9 +165,9 @@ export default class Schema {
    */
 
   delIndex(name) {
-    if (typeof name !== 'string' || !name) throw new TypeError('"name" is required')
+    if (typeof name !== 'string') throw new TypeError('"name" is required') // idb-schema requirement
     const index = this._current.store.indexes[name]
-    if (!index) throw new TypeError(`"${name}" index is not defined`)
+    if (!index) throw new DOMException(`"${name}" index is not defined`, 'NotFoundError')
     delete this._current.store.indexes[name]
     this._versions[this.version()].dropIndexes.push(index)
     return this
@@ -496,7 +500,7 @@ function upgradeVersion(versionSchema, e, oldVersion) {
     // Only pass the options that are explicitly specified to createObjectStore() otherwise IE/Edge
     // can throw an InvalidAccessError - see https://msdn.microsoft.com/en-us/library/hh772493(v=vs.85).aspx
     const opts = {}
-    if (s.keyPath) opts.keyPath = s.keyPath
+    if (s.keyPath !== null && s.keyPath !== undefined) opts.keyPath = s.keyPath
     if (s.autoIncrement) opts.autoIncrement = s.autoIncrement
     db.createObjectStore(s.name, opts)
   })

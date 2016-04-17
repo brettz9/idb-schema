@@ -5,6 +5,11 @@
   which is still existing but was not added by idb-schema). (If `delStore`
   does throw later (or if there is any other upgrade error), the error
   can now be caught by `callback` or `open`/`upgrade`.)
+* Fix: Allow stores, indexes, and store `keyPath`s to be an empty string
+* Fix: Allow `autoIncrement` with non-empty string `keyPath`s but disallow
+  arrays and empty string
+* Fix: Throw proper exceptions (as would be thrown if sent to IndexedDB at
+  run-time)
 * Feature: Allow `delStore` to pass in name not present within schema (in
   case added previously).
 * Feature: Add `open` and `upgrade` methods to allow a sequence of upgrades
