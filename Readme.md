@@ -90,7 +90,8 @@ schema.open('myDb', 3).then((db) => {
 However, unlike `callback()`, when `schema.open` is used, the callbacks
 added by `addCallback` cannot handle operations such as adding stores
 or indexes (though these operations can be executed with the other
-methods of idb-schema anyways).
+methods of idb-schema anyways) though those added by `addEarlyCallback`
+can be.
 
 Besides conducting an upgrade, `schema.open` uses the `open` of
 [idb-factory](https://github.com/treojs/idb-factory) behind the scenes, so
@@ -223,6 +224,26 @@ Options:
 
 Delete index by `name` from current store.
 
+### schema.addEarlyCallback(cb)
+
+Adds a `cb` to be executed at the beginning of the `upgradeneeded` event
+and passed the event object. This will, out of necessity, run synchronously,
+so promises cannot safely be used therein (whether used in `schema.callback`
+or `schema.open`/`schema.upgrade`).
+
+However, due to their early execution, such callbacks are, unlike
+`addCallback` callbacks used with `schema.open`/`schema.upgrade`,
+able to use methods such as `addStore`.
+
+```js
+const schema = new Schema()
+.addStore('users', { increment: true, keyPath: 'id' })
+.addIndex('byName', 'name')
+.addEarlyCallback((e) => {
+  schema.addIndex('byId', 'id')
+})
+```
+
 ### schema.addCallback(cb)
 
 Adds a `cb` to be executed at the end of the `upgradeneeded` event
@@ -249,7 +270,8 @@ these methods, unlike `schema.callback`, will cause the callbacks
 to be executed safely within the more persistent `onsuccess` event (and the
 callback will be passed the database result instead of the `upgradeneeded`
 event). If you do not need promises, you will have the option of using
-`schema.callback` in addition to `schema.open` or `schema.upgrade`.
+`schema.callback` in addition to `schema.open` or `schema.upgrade` (or
+you can use `addEarlyCallback`).
 
 ### schema.clone()
 

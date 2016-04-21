@@ -52,6 +52,7 @@ export default class Schema {
       indexes: [],      // store.createIndex
       dropIndexes: [],  // store.deleteIndex
       callbacks: [],
+      earlyCallbacks: [],
       version: version, // version
     }
 
@@ -178,6 +179,11 @@ export default class Schema {
     return this
   }
 
+  addEarlyCallback(cb) {
+    this._versions[this.version()].earlyCallbacks.push(cb)
+    return this
+  }
+
   /**
    * Flushes storage pertaining to incomplete upgrades
    *
@@ -248,7 +254,7 @@ export default class Schema {
       dbLast.close()
 
       setTimeout(() => {
-        open(dbName, versionSchema.version, upgradeneeded((e, ...dbInfo) => {
+        open(dbName, versionSchema.version, upgradeneeded((...dbInfo) => {
           upgradeVersion(versionSchema, ...dbInfo)
         })).then((db) => {
           afterOpen(db, res, rej, start)
@@ -362,7 +368,7 @@ export default class Schema {
         reject(err)
         return
       }
-      const upgrade = upgradeneeded((e, ...dbInfo) => {
+      const upgrade = upgradeneeded((...dbInfo) => {
         // Upgrade from 0 to version 1
         const versionIter = versions.next()
         if (versionIter.done) {
@@ -393,10 +399,10 @@ export default class Schema {
    */
 
   callback() {
-    const versions = values(clone(this._versions)).sort((a, b) => a.version - b.version)
+    const versions = values(this._versions).sort((a, b) => a.version - b.version)
     return upgradeneeded((e, ...dbInfo) => {
       versions.forEach((versionSchema) => {
-        upgradeVersion(versionSchema, ...dbInfo)
+        upgradeVersion(versionSchema, e, ...dbInfo)
         versionSchema.callbacks.forEach((cb) => {
           cb(e)
         })
@@ -467,8 +473,12 @@ function upgradeneeded(cb) {
   }
 }
 
-function upgradeVersion(versionSchema, oldVersion, db, tr) {
+function upgradeVersion(versionSchema, e, oldVersion, db, tr) {
   if (oldVersion >= versionSchema.version) return
+
+  versionSchema.earlyCallbacks.forEach((cb) => {
+    cb(e)
+  })
 
   versionSchema.stores.forEach((s) => {
     // Only pass the options that are explicitly specified to createObjectStore() otherwise IE/Edge

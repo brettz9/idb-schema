@@ -4,6 +4,8 @@
   which can support promises returned by `addCallback` callbacks (and a
   `flushIncomplete` method for flushing storage pertaining to incomplete
   upgrades)
+* Feature: Add `addEarlyCallback` to allow use of `idb-schema` methods
+  within these synchronous callbacks
 
 ## 3.2.1 / 2015-11-29
 
