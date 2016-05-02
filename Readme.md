@@ -70,6 +70,75 @@ req.onsuccess = (e) => {
 }
 ```
 
+Note that this callback will not support `addCallback` callbacks if they rely
+on promises and run transactions (since `upgradeneeded`'s transaction will
+expire). You can instead use `schema.open` or `schema.upgrade`.
+
+### schema.open(dbName, [version])
+
+With `schema.open`, in addition to getting upgrades applied (including
+callbacks added by `addCallback` and even including promise-based callbacks
+which utilize transactions), you can use the `db` result opened at the
+latest version:
+
+```js
+schema.open('myDb', 3).then((db) => {
+  // Use db
+})
+```
+
+However, unlike `callback()`, when `schema.open` is used, the callbacks
+added by `addCallback` cannot handle operations such as adding stores
+or indexes (though these operations can be executed with the other
+methods of idb-schema anyways).
+
+Besides conducting an upgrade, `schema.open` uses the `open` of
+[idb-factory](https://github.com/treojs/idb-factory) behind the scenes, so
+one can also catch errors and benefit from its fixing of browser quirks.
+
+If a version is not supplied, the latest version available within the schema
+will be used.
+
+If you only wish to upgrade and do not wish to keep a connection open, use
+`schema.upgrade`. If you wish to manage opening a connection yourself (and are
+not using promises within `addCallback` callbacks), you can use
+`schema.callback`.
+
+Despite allowing for promise-based callbacks utilizing transactions, due to
+[current limitations in IndexedDB](https://github.com/w3c/IndexedDB/issues/42),
+we cannot get a transaction which encompasses both the store/index changes
+and the store content changes, so it will not be possible to rollback the
+entire version upgrade if the store/index changes transaction succeeds while
+the store content change transaction fails. However, upon such a condition
+idb-schema will set a `localStorage` property to disallow subsequent attempts
+on `schema.open` or `schema.upgrade` to succeed until either the storage
+property is manually flushed by the `flushIncomplete()` method or if the
+`retry` method on the error object is invoked to return a Promise which will
+reattempt to execute the failed callback and the rest of the upgrades and
+which will resolve according to whether this next attempt was successful or
+not.
+
+### schema.upgrade(dbName, [version], [keepOpen=false])
+
+Equivalent to `schema.open` but without keeping a connection open
+(unless `keepOpen` is set to `true`):
+
+```js
+schema.upgrade('myDb', 3).then(() => {
+  // No database result is available for upgrades. Use `schema.open` if you
+  //   wish to keep a connection to the latest version open
+  //   for non-upgrade related transactions
+})
+```
+
+### schema.flushIncomplete(dbName)
+
+If there was an incomplete upgrade, this method will flush the local storage
+used to signal to `schema.open`/`schema.upgrade` that they should not yet allow
+opening until the upgrade is complete. This method should normally not be used
+as it is important to ensure an upgrade occurs like a complete transaction, and
+flushing will interfere with this.
+
 ### schema.stores()
 
 Get JSON representation of database schema.
@@ -156,7 +225,11 @@ Delete index by `name` from current store.
 
 ### schema.addCallback(cb)
 
-Add `cb` to be executed at the end of the `upgradeneeded` event.
+Adds a `cb` to be executed at the end of the `upgradeneeded` event
+(if `schema.callback()` is used) or, at the beginning of the `success`
+event (if `schema.open` and `schema.upgrade` are used). If `callback`
+is used, the callback will be passed the `upgradeneeded` event. If
+the other two methods are used, the db result will be passed instead.
 
 ```js
 new Schema()
@@ -168,6 +241,15 @@ new Schema()
   users.put({ name: 'Barney' })
 })
 ```
+
+Note that if you wish to use promises within such callbacks and make
+transactions within them, your `addCallback` callback should return
+a promise chain and then use `schema.open` or `schema.upgrade` because
+these methods, unlike `schema.callback`, will cause the callbacks
+to be executed safely within the more persistent `onsuccess` event (and the
+callback will be passed the database result instead of the `upgradeneeded`
+event). If you do not need promises, you will have the option of using
+`schema.callback` in addition to `schema.open` or `schema.upgrade`.
 
 ### schema.clone()
 
