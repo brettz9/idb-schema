@@ -58,7 +58,7 @@ schema.stores()
 
 ## API
 
-### schema.callback([errBack])
+### schema.callback([cb], [errBack])
 
 Generate `onupgradeneeded` callback.
 
@@ -74,8 +74,12 @@ Note that this callback will not support `addCallback` callbacks if they rely
 on promises and run transactions (since `upgradeneeded`'s transaction will
 expire). You can instead use `schema.open` or `schema.upgrade`.
 
-`callback` takes an optional `errBack` function which is passed an error
-object (upon encountering any errors during the upgrade) as well as the
+`callback` takes an optional `cb` function to be called with the
+`upgradeneeded` event when ready. This is useful for `copyStore`
+and `renameStore` which, by obtaining store contents, must act asynchronously.
+
+`callback` also takes an optional `errBack` function which is passed an
+error object (upon encountering any errors during the upgrade) as well as the
 `upgradeneeded` event.
 
 ```js
@@ -242,6 +246,20 @@ return open(dbName, schema.version(), schema.callback()).catch((err) => {
   console.log(err.name) // 'NotFoundError'
 })
 ```
+
+### schema.renameStore(oldName, newName, [opts])
+
+Will copy the contents of the store `oldName` into a new store `newName`
+and delete the old store. The store options will be based on `opts` if
+present, and based on the old store's options otherwise.
+
+### schema.copyStore(oldName, newName, [opts], [deleteOld=false])
+
+Will copy the contents of the store `oldName` into a new store `newName`.
+If `deleteOld` is `true` it will then delete the old store. The store
+options will be based on `opts` if present, and based on the old
+store's options otherwise.
+
 
 ### schema.getStore(name)
 

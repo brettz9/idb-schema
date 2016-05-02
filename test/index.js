@@ -42,7 +42,7 @@ describe('idb-schema', function idbSchemaTest() {
     expect(schema.callback()).a('function')
     expect(schema.version()).equal(1)
     expect(schema.stores()[0].indexes).length(4)
-    expect(schema.stores()[1]).eql({ name: 'users', indexes: [], keyPath: 'id', autoIncrement: true })
+    expect(schema.stores()[1]).eql({ name: 'users', indexes: [], keyPath: 'id', autoIncrement: true, copyFrom: null })
 
     return open(dbName, schema.version(), schema.callback()).then((originDb) => {
       db = originDb
@@ -195,7 +195,7 @@ describe('idb-schema', function idbSchemaTest() {
     const schema = new Schema()
     .version(1)
       .delStore('nonexistentStore')
-    return open(dbName, schema.version(), schema.callback(function errBack(err /* , e */) {
+    return open(dbName, schema.version(), schema.callback(null, function errBack(err /* , e */) {
       ranErrBack = true
       throw err
     })).catch((err) => {
@@ -255,6 +255,89 @@ describe('idb-schema', function idbSchemaTest() {
       expect(store.name).equal('books')
       expect(store.indexNames.contains('byYear')).equal(true)
       originDb.close()
+    })
+  })
+
+  it('supports renameStore and copyStore (no content)', () => {
+    const schema = new Schema()
+    .version(1)
+      .addStore('books')
+      .addStore('magazines')
+    .version(2)
+      .renameStore('books', 'literature')
+    .version(3)
+      .copyStore('magazines', 'magazine-archive')
+
+    return open(dbName, schema.version(), schema.callback()).then((originDb) => {
+      db = originDb
+
+      expect(db.objectStoreNames.contains('books')).equal(false)
+      const trans = db.transaction(['magazines', 'literature', 'magazine-archive'])
+      const magazines = trans.objectStore('magazines')
+      expect(magazines.name).equal('magazines')
+      const literature = trans.objectStore('literature')
+      expect(literature.name).equal('literature')
+      const magazineArchive = trans.objectStore('magazine-archive')
+      expect(magazineArchive.name).equal('magazine-archive')
+      originDb.close()
+    })
+  })
+
+  it('supports renameStore and copyStore (with content)', () => {
+    const schema = new Schema()
+    .version(1)
+      .addStore('books', { autoIncrement: true })
+      .addStore('magazines', { autoIncrement: true })
+      .addCallback((dbr) => {
+        const trans = dbr.transaction(['books', 'magazines'], 'readwrite')
+        const books = trans.objectStore('books')
+        const magazines = trans.objectStore('magazines')
+        return new Promise((resolve) => {
+          const req = books.put({ name: 'World Peace through World Language', isbn: '1111111111' })
+          req.onsuccess = () => {
+            const req2 = magazines.put({ name: 'Popular Science' })
+            req2.onsuccess = resolve
+          }
+        })
+      })
+    .version(2)
+      .renameStore('books', 'literature')
+    .version(3)
+      .copyStore('magazines', 'magazine-archive')
+
+    return schema.open(dbName, 3).then(function opened(originDb) {
+      db = originDb
+
+      expect(db.objectStoreNames.contains('books')).equal(false)
+      const trans = db.transaction(['magazines', 'literature', 'magazine-archive'])
+      const magazines = trans.objectStore('magazines')
+      expect(magazines.name).equal('magazines')
+      const literature = trans.objectStore('literature')
+      expect(literature.name).equal('literature')
+      const magazineArchive = trans.objectStore('magazine-archive')
+      expect(magazineArchive.name).equal('magazine-archive')
+      return new Promise((resolve) => {
+        const req1 = magazines.getAll()
+        req1.onsuccess = () => {
+          const results = req1.result
+          expect(results.length).equal(1)
+          expect(results[0].name).equal('Popular Science')
+          const req2 = literature.getAll()
+          req2.onsuccess = () => {
+            const results2 = req2.result
+            expect(results2.length).equal(1)
+            expect(results2[0].isbn).equal('1111111111')
+            const req3 = magazineArchive.getAll()
+            req3.onsuccess = () => {
+              const results3 = req3.result
+              expect(results3.length).equal(1)
+              expect(results3[0].name).equal('Popular Science')
+              originDb.close()
+              resolve()
+            }
+          }
+        }
+      })
     })
   })
 

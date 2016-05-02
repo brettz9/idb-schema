@@ -5,6 +5,11 @@
   which is still existing but was not added by idb-schema). (If `delStore`
   does throw later (or if there is any other upgrade error), the error
   can now be caught by `callback` or `open`/`upgrade`.)
+* Breaking API change (minor)/Feature: `addStore` accepts optional `copyFrom`
+  option object (used by new methods `renameStore` and `copyStore`) with
+  a required `name` string key (the old store to copy from) and an optional
+  `deleteOld` boolean (default is `false`). `schema.stores` now includes
+  `copyFrom` information.
 * API change: During upgrades, stores and indexes slated for deletion will
   be deleted before those slated for creation (allowing one to rebuild a
   store or index--bearing in mind that rebuilding a store will not preserve
@@ -22,7 +27,7 @@
   upgrades)
 * Feature: Add `addEarlyCallback` to allow use of `idb-schema` methods
   within these synchronous callbacks
-* Feature: Support `errBack` argument to `callback`
+* Feature: Support `callback` and `errBack` arguments to `callback`
 * Feature: Support object store argument supplied to `getStore`
 * Feature: `version(number)` will now allow inputting versions out of order,
   but the getter will continue to get the highest version. To get the current

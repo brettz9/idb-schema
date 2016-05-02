@@ -67,19 +67,33 @@ export default class Schema {
    * Add store.
    *
    * @param {String} name
-   * @param {Object} [opts] { key: null, increment: false }
+   * @param {Object} [opts] { key: null, increment: false, copyFrom: null }
    * @return {Schema}
    */
 
   addStore(name, opts = {}) {
     if (typeof name !== 'string') throw new TypeError('"name" is required') // idb-schema requirement
     if (this._stores[name]) throw new DOMException(`"${name}" store is already defined`, 'ConstraintError')
-
+    if (isPlainObj(opts) && isPlainObj(opts.copyFrom)) {
+      const copyFrom = opts.copyFrom
+      const copyFromName = copyFrom.name
+      if (typeof copyFromName !== 'string') throw new TypeError('"copyFrom.name" is required when `copyFrom` is present') // idb-schema requirement
+      if (this._versions[this.lastEnteredVersion()].dropStores.some((dropStore) => dropStore.name === copyFromName)) {
+        throw new TypeError('"copyFrom.name" must not be a store slated for deletion.') // idb-schema requirement
+      }
+      if (copyFrom.deleteOld) {
+        const copyFromStore = this._stores[copyFromName]
+        if (copyFromStore) { // We don't throw here if non-existing since it may have been created outside of idb-schema
+          delete this._stores[copyFromName]
+        }
+      }
+    }
     const store = {
       name: name,
       indexes: {},
       keyPath: opts.key || opts.keyPath,
       autoIncrement: opts.increment || opts.autoIncrement || false,
+      copyFrom: opts.copyFrom || null, // We don't check here for existence of a copyFrom store as might be copying from preexisting store
     }
     if (!store.keyPath && store.keyPath !== '') {
       store.keyPath = null
@@ -104,6 +118,15 @@ export default class Schema {
 
   delStore(name) {
     if (typeof name !== 'string') throw new TypeError('"name" is required') // idb-schema requirement
+    this._versions[this.lastEnteredVersion()].stores.forEach((store) => {
+      const copyFrom = store.copyFrom
+      if (isPlainObj(copyFrom) && name === copyFrom.name) {
+        if (copyFrom.deleteOld) {
+          throw new TypeError('"name" is already slated for deletion') // idb-schema requirement
+        }
+        throw new TypeError('set `deleteOld` on `copyFrom` to delete this store.') // idb-schema requirement
+      }
+    })
     let store = this._stores[name]
     if (store) {
       delete this._stores[name]
@@ -113,6 +136,37 @@ export default class Schema {
     this._versions[this.lastEnteredVersion()].dropStores.push(store)
     this._current.store = null
     return this
+  }
+
+  /**
+   * Rename store.
+   *
+   * @param {String} oldName Old name
+   * @param {String} newName New name
+   * @param {Object} [opts] { key: null, increment: false }
+   * @return {Schema}
+  */
+  renameStore(oldName, newName, options) {
+    return this.copyStore(oldName, newName, options, true)
+  }
+
+  /**
+   * Copy store.
+   *
+   * @param {String} oldName Old name
+   * @param {String} newName New name
+   * @param {Object} [opts] { key: null, increment: false }
+   * @param {Boolean} [deleteOld=false] Whether to delete the old store or not
+   * @return {Schema}
+  */
+  copyStore(oldName, newName, options, deleteOld = false) {
+    if (typeof oldName !== 'string') throw new TypeError('"oldName" is required') // idb-schema requirement
+    if (typeof newName !== 'string') throw new TypeError('"newName" is required') // idb-schema requirement
+
+    options = isPlainObj(options) ? clone(options) : {}
+    options.copyFrom = { name: oldName, deleteOld, options }
+
+    return this.addStore(newName, options)
   }
 
   /**
@@ -141,6 +195,7 @@ export default class Schema {
         }, {}),
         keyPath: storeObj.keyPath,
         autoIncrement: storeObj.autoIncrement,
+        copyFrom: null,
       }
       this._stores[name] = store
     }
@@ -261,6 +316,7 @@ export default class Schema {
     setVersions()
     function thenableUpgradeVersion(dbLast, res, rej, start) {
       const lastVers = dbLast.version
+      let ready = true
       let lastGoodSchema
       let versionIter
       for (versionIter = versions.next();
@@ -286,9 +342,17 @@ export default class Schema {
 
       setTimeout(() => {
         open(dbName, versionSchema.version, upgradeneeded((...dbInfo) => {
-          upgradeVersion(versionSchema, ...dbInfo)
+          ready = false
+          upgradeVersion(versionSchema, ...dbInfo, () => {
+            ready = true
+          })
         })).then((db) => {
-          afterOpen(db, res, rej, start)
+          const intvl = setInterval(() => {
+            if (ready) {
+              clearInterval(intvl)
+              afterOpen(db, res, rej, start)
+            }
+          }, 100)
         }).catch((err) => {
           rej(err)
         })
@@ -399,26 +463,36 @@ export default class Schema {
         reject(err)
         return
       }
+      let ready = true
       const upgrade = upgradeneeded((...dbInfo) => {
         // Upgrade from 0 to version 1
+        ready = false
         const versionIter = versions.next()
         if (versionIter.done) {
           throw new Error('No schema versions added for upgrade')
         }
         versionSchema = versionIter.value
-        upgradeVersion(versionSchema, ...dbInfo)
+        upgradeVersion(versionSchema, ...dbInfo, () => {
+          ready = true
+        })
       })
       open(dbName, upgrade).catch(blockRecover(reject)).then((db) => {
-        if (version < db.version) {
-          db.close()
-          reject(new DOMException('The requested version (' + version + ') is less than the existing version (' + db.version + ').', 'VersionError'))
-          return
-        }
-        if (versionSchema) {
-          afterOpen(db, resolve, reject)
-          return
-        }
-        thenableUpgradeVersion(db, resolve, reject)
+        const intvl = setInterval(() => {
+          if (!ready) {
+            return
+          }
+          clearInterval(intvl)
+          if (version < db.version) {
+            db.close()
+            reject(new DOMException('The requested version (' + version + ') is less than the existing version (' + db.version + ').', 'VersionError'))
+            return
+          }
+          if (versionSchema) {
+            afterOpen(db, resolve, reject)
+            return
+          }
+          thenableUpgradeVersion(db, resolve, reject)
+        }, 100)
       }).catch((err) => reject(err))
     })
   }
@@ -429,24 +503,43 @@ export default class Schema {
    * @return {Function}
    */
 
-  callback(errBack) {
-    const versions = values(this._versions).sort((a, b) => a.version - b.version)
-    return upgradeneeded((e, oldVersion) => {
-      versions.some((versionSchema) => {
-        try {
-          upgradeVersion(versionSchema, e, oldVersion)
-          versionSchema.callbacks.forEach((cb) => {
-            cb(e)
-          })
-        } catch (err) {
-          if (errBack) {
-            errBack(err, e)
-            return true
-          }
-          throw err
+  callback(callback, errBack) {
+    const versions = values(this._versions).sort((a, b) => a.version - b.version).values()
+    const tryCatch = (e, cb) => {
+      try {
+        cb()
+      } catch (err) {
+        if (errBack) {
+          errBack(err, e)
+          return true
         }
+        throw err
+      }
+    }
+    const upgrade = (e, oldVersion) => {
+      let versionIter = versions.next()
+      while (!versionIter.done && versionIter.value.version <= oldVersion) {
+        versionIter = versions.next()
+      }
+
+      if (versionIter.done) {
+        if (callback) callback(e)
+        return
+      }
+      const versionSchema = versionIter.value
+
+      tryCatch(e, () => {
+        upgradeVersion(versionSchema, e, oldVersion, () => {
+          tryCatch(e, () => {
+            versionSchema.callbacks.forEach((cb) => {
+              cb(e)
+            })
+            upgrade(e, oldVersion)
+          })
+        })
       })
-    })
+    }
+    return upgradeneeded(upgrade)
   }
 
   /**
@@ -510,7 +603,7 @@ function upgradeneeded(cb) {
   }
 }
 
-function upgradeVersion(versionSchema, e, oldVersion) {
+function upgradeVersion(versionSchema, e, oldVersion, finishedCb) {
   if (oldVersion >= versionSchema.version) return
 
   const db = e.target.result
@@ -524,23 +617,74 @@ function upgradeVersion(versionSchema, e, oldVersion) {
     db.deleteObjectStore(s.name)
   })
 
-  versionSchema.stores.forEach((s) => {
+  // We wait for addition of old data and then for the deleting of the old
+  //   store before iterating to add the next store (in case the user may
+  //   create a new store of the same name as an old deleted store)
+  const stores = versionSchema.stores.values()
+  function iterateStores() {
+    const storeIter = stores.next()
+    if (storeIter.done) {
+      versionSchema.dropIndexes.forEach((i) => {
+        tr.objectStore(i.storeName).deleteIndex(i.name)
+      })
+
+      versionSchema.indexes.forEach((i) => {
+        tr.objectStore(i.storeName).createIndex(i.name, i.field, {
+          unique: i.unique,
+          multiEntry: i.multiEntry,
+        })
+      })
+      if (finishedCb) finishedCb()
+      return
+    }
+    const s = storeIter.value
+
     // Only pass the options that are explicitly specified to createObjectStore() otherwise IE/Edge
     // can throw an InvalidAccessError - see https://msdn.microsoft.com/en-us/library/hh772493(v=vs.85).aspx
     const opts = {}
-    if (s.keyPath !== null && s.keyPath !== undefined) opts.keyPath = s.keyPath
-    if (s.autoIncrement) opts.autoIncrement = s.autoIncrement
-    db.createObjectStore(s.name, opts)
-  })
+    let oldStoreName
+    let oldObjStore
+    if (s.copyFrom) { // Store props not set yet as need reflection (and may be store not in idb-schema)
+      oldStoreName = s.copyFrom.name
+      oldObjStore = tr.objectStore(oldStoreName)
+      const oldObjStoreOptions = s.copyFrom.options || {}
+      if (oldObjStoreOptions.keyPath !== null && oldObjStoreOptions.keyPath !== undefined) opts.keyPath = oldObjStoreOptions.keyPath
+      else if (oldObjStore.keyPath !== null && s.keyPath !== undefined) opts.keyPath = oldObjStore.keyPath
+      if (oldObjStoreOptions.autoIncrement !== undefined) opts.autoIncrement = oldObjStoreOptions.autoIncrement
+      else if (oldObjStore.autoIncrement) opts.autoIncrement = oldObjStore.autoIncrement
+    } else {
+      if (s.keyPath !== null && s.keyPath !== undefined) opts.keyPath = s.keyPath
+      if (s.autoIncrement) opts.autoIncrement = s.autoIncrement
+    }
 
-  versionSchema.dropIndexes.forEach((i) => {
-    tr.objectStore(i.storeName).deleteIndex(i.name)
-  })
+    const newObjStore = db.createObjectStore(s.name, opts)
+    if (!s.copyFrom) {
+      iterateStores()
+      return
+    }
+    const req = oldObjStore.getAll()
+    req.onsuccess = () => {
+      const oldContents = req.result
+      let ct = 0
 
-  versionSchema.indexes.forEach((i) => {
-    tr.objectStore(i.storeName).createIndex(i.name, i.field, {
-      unique: i.unique,
-      multiEntry: i.multiEntry,
-    })
-  })
+      if (!oldContents.length && s.copyFrom.deleteOld) {
+        db.deleteObjectStore(oldStoreName)
+        iterateStores()
+        return
+      }
+      oldContents.forEach((oldContent) => {
+        const addReq = newObjStore.add(oldContent)
+        addReq.onsuccess = () => {
+          ct++
+          if (ct === oldContents.length) {
+            if (s.copyFrom.deleteOld) {
+              db.deleteObjectStore(oldStoreName)
+            }
+            iterateStores()
+          }
+        }
+      })
+    }
+  }
+  iterateStores()
 }
