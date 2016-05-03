@@ -148,7 +148,6 @@ describe('idb-schema', function idbSchemaTest() {
       .addIndex('byYear', 'year')
 
     // version
-    expect(() => schema.version(1)).throws('invalid version')
     expect(() => new Schema().version(0)).throws('invalid version')
     expect(() => new Schema().version(-1)).throws('invalid version')
     expect(() => new Schema().version(2.5)).throws('invalid version')

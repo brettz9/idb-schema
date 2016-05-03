@@ -208,8 +208,16 @@ Get JSON representation of database schema.
 
 ### schema.version([number])
 
-Get current version or set new version to `number` and reset current store.
-Use it to separate migrations on time.
+Gets the highest version or sets the new version to `number` and resets
+the current store. Use it to separate migrations by time.
+
+Note that `schema.version(number)` can now be used to add versions out of
+order, but `schema.version()` will always return the highest version number.
+
+### schema.lastEnteredVersion()
+
+This gets the most recently entered version number. This should only
+be needed by classes extending `idb-schema`.
 
 ### schema.addStore(name, [opts])
 

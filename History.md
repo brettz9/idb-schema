@@ -24,6 +24,10 @@
   within these synchronous callbacks
 * Feature: Support `errBack` argument to `callback`
 * Feature: Support object store argument supplied to `getStore`
+* Feature: `version(number)` will now allow inputting versions out of order,
+  but the getter will continue to get the highest version. To get the current
+  rather than highest version, the method `lastEnteredVersion()` has been
+  added.
 
 ## 3.2.1 / 2015-11-29
 

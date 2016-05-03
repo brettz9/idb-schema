@@ -6,8 +6,8 @@ const values = Object.values
 const isInteger = Number.isInteger
 const localStorageExists = typeof window !== 'undefined' && window.localStorage
 
-const getJSONStorage = (item, dflt) => {
-  return JSON.parse(localStorage.getItem(item) || dflt || '{}')
+const getJSONStorage = (item, dflt = '{}') => {
+  return JSON.parse(localStorage.getItem(item) || dflt)
 }
 const setJSONStorage = (item, value) => {
   localStorage.setItem(item, JSON.stringify(value))
@@ -32,6 +32,10 @@ export default class Schema {
     this.version(1)
   }
 
+  lastEnteredVersion() {
+    return this._current.version
+  }
+
   /**
    * Get/Set new version.
    *
@@ -40,8 +44,8 @@ export default class Schema {
    */
 
   version(version) {
-    if (!arguments.length) return this._current.version
-    if (!isInteger(version) || version < 1 || version < this.version() || version > MAX_VERSION) {
+    if (!arguments.length) return parseInt(Object.keys(this._versions).sort().pop(), 10)
+    if (!isInteger(version) || version < 1 || version > MAX_VERSION) {
       throw new TypeError('invalid version')
     }
 
@@ -85,7 +89,7 @@ export default class Schema {
     }
 
     this._stores[name] = store
-    this._versions[this.version()].stores.push(store)
+    this._versions[this.lastEnteredVersion()].stores.push(store)
     this._current.store = store
 
     return this
@@ -106,7 +110,7 @@ export default class Schema {
     } else {
       store = { name: name }
     }
-    this._versions[this.version()].dropStores.push(store)
+    this._versions[this.lastEnteredVersion()].dropStores.push(store)
     this._current.store = null
     return this
   }
@@ -172,7 +176,7 @@ export default class Schema {
       unique: opts.unique || false,
     }
     store.indexes[name] = index
-    this._versions[this.version()].indexes.push(index)
+    this._versions[this.lastEnteredVersion()].indexes.push(index)
 
     return this
   }
@@ -189,7 +193,7 @@ export default class Schema {
     const index = this._current.store.indexes[name]
     if (!index) throw new DOMException(`"${name}" index is not defined`, 'NotFoundError')
     delete this._current.store.indexes[name]
-    this._versions[this.version()].dropIndexes.push(index)
+    this._versions[this.lastEnteredVersion()].dropIndexes.push(index)
     return this
   }
 
@@ -202,12 +206,12 @@ export default class Schema {
    */
 
   addCallback(cb) {
-    this._versions[this.version()].callbacks.push(cb)
+    this._versions[this.lastEnteredVersion()].callbacks.push(cb)
     return this
   }
 
   addEarlyCallback(cb) {
-    this._versions[this.version()].earlyCallbacks.push(cb)
+    this._versions[this.lastEnteredVersion()].earlyCallbacks.push(cb)
     return this
   }
 
