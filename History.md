@@ -32,7 +32,8 @@
 * Feature: `version(number)` will now allow inputting versions out of order,
   but the getter will continue to get the highest version. To get the current
   rather than highest version, the method `lastEnteredVersion()` has been
-  added.
+  added and the method `setCurrentVersion` has been added for setting the
+  current version.
 
 ## 3.2.1 / 2015-11-29
 

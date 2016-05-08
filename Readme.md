@@ -223,6 +223,11 @@ order, but `schema.version()` will always return the highest version number.
 This gets the most recently entered version number. This should only
 be needed by classes extending `idb-schema`.
 
+### schema.setCurrentVersion(version)
+
+Sets the current version of the schema. This should only be needed by
+classes extending `idb-schema`.
+
 ### schema.addStore(name, [opts])
 
 Create object store with `name`.

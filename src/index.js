@@ -36,6 +36,10 @@ export default class Schema {
     return this._current.version
   }
 
+  setCurrentVersion(version) {
+    this._current = { version: version, store: null }
+  }
+
   /**
    * Get/Set new version.
    *
@@ -49,7 +53,7 @@ export default class Schema {
       throw new TypeError('invalid version')
     }
 
-    this._current = { version: version, store: null }
+    this.setCurrentVersion(version)
     this._versions[version] = {
       stores: [],       // db.createObjectStore
       dropStores: [],   // db.deleteObjectStore
@@ -298,11 +302,11 @@ export default class Schema {
    */
 
   upgrade(dbName, version, keepOpen) {
-    let versionSchema
+    let currentVersion
     let versions
     let afterOpen
     const setVersions = () => {
-      versions = values(this._versions).sort((a, b) => a.version - b.version).values()
+      versions = values(this._versions).sort((a, b) => a.version - b.version).map((obj) => obj.version).values()
     }
     const blockRecover = (reject) => {
       return (err) => {
@@ -314,21 +318,21 @@ export default class Schema {
       }
     }
     setVersions()
-    function thenableUpgradeVersion(dbLast, res, rej, start) {
+    const thenableUpgradeVersion = (dbLast, res, rej, start) => {
       const lastVers = dbLast.version
       let ready = true
-      let lastGoodSchema
+      let lastGoodVersion
       let versionIter
       for (versionIter = versions.next();
-        (!versionIter.done && versionIter.value.version <= lastVers);
+        (!versionIter.done && versionIter.value <= lastVers);
         versionIter = versions.next()
       ) {
-        lastGoodSchema = versionIter.value
+        lastGoodVersion = versionIter.value
       }
-      versionSchema = versionIter.value
-      if (versionIter.done || versionSchema.version > version) {
+      currentVersion = versionIter.value
+      if (versionIter.done || currentVersion > version) {
         if (start !== undefined) {
-          versionSchema = lastGoodSchema
+          currentVersion = lastGoodVersion
           afterOpen(dbLast, res, rej, start)
         } else if (!keepOpen) {
           dbLast.close()
@@ -341,9 +345,9 @@ export default class Schema {
       dbLast.close()
 
       setTimeout(() => {
-        open(dbName, versionSchema.version, upgradeneeded((...dbInfo) => {
+        open(dbName, currentVersion, upgradeneeded((...dbInfo) => {
           ready = false
-          upgradeVersion(versionSchema, ...dbInfo, () => {
+          upgradeVersion.call(this, currentVersion, ...dbInfo, () => {
             ready = true
           })
         })).then((db) => {
@@ -390,6 +394,7 @@ export default class Schema {
       }
       let promise = Promise.resolve()
       let lastIndex
+      const versionSchema = this._versions[currentVersion] // We can safely cache as these callbacks do not need to access schema info
       const cbFailed = versionSchema.callbacks.some((cb, i) => {
         if (start !== undefined && i < start) {
           return false
@@ -445,10 +450,10 @@ export default class Schema {
         err.badVersion = iudb.version
         err.retry = () => {
           let versionIter = versions.next()
-          while (!versionIter.done && versionIter.value.version < err.badVersion) {
+          while (!versionIter.done && versionIter.value < err.badVersion) {
             versionIter = versions.next()
           }
-          versionSchema = versionIter.value
+          currentVersion = versionIter.value
           return new Promise((resolv, rejct) => {
             const resolver = (item) => {
               this.flushIncomplete(dbName)
@@ -471,8 +476,8 @@ export default class Schema {
         if (versionIter.done) {
           throw new Error('No schema versions added for upgrade')
         }
-        versionSchema = versionIter.value
-        upgradeVersion(versionSchema, ...dbInfo, () => {
+        currentVersion = versionIter.value
+        upgradeVersion.call(this, currentVersion, ...dbInfo, () => {
           ready = true
         })
       })
@@ -487,7 +492,7 @@ export default class Schema {
             reject(new DOMException('The requested version (' + version + ') is less than the existing version (' + db.version + ').', 'VersionError'))
             return
           }
-          if (versionSchema) {
+          if (currentVersion !== undefined) {
             afterOpen(db, resolve, reject)
             return
           }
@@ -504,7 +509,7 @@ export default class Schema {
    */
 
   callback(callback, errBack) {
-    const versions = values(this._versions).sort((a, b) => a.version - b.version).values()
+    const versions = values(this._versions).sort((a, b) => a.version - b.version).map((obj) => obj.version).values()
     const tryCatch = (e, cb) => {
       try {
         cb()
@@ -518,7 +523,7 @@ export default class Schema {
     }
     const upgrade = (e, oldVersion) => {
       let versionIter = versions.next()
-      while (!versionIter.done && versionIter.value.version <= oldVersion) {
+      while (!versionIter.done && versionIter.value <= oldVersion) {
         versionIter = versions.next()
       }
 
@@ -526,14 +531,17 @@ export default class Schema {
         if (callback) callback(e)
         return
       }
-      const versionSchema = versionIter.value
+      const version = versionIter.value
+      const lev = this.lastEnteredVersion()
 
       tryCatch(e, () => {
-        upgradeVersion(versionSchema, e, oldVersion, () => {
+        upgradeVersion.call(this, version, e, oldVersion, () => {
           tryCatch(e, () => {
-            versionSchema.callbacks.forEach((cb) => {
-              cb(e)
+            this._versions[version].callbacks.forEach((cb) => {
+              this.setCurrentVersion(version) // Reset current version for callback to be able to operate on this version rather than the last added one
+              cb.call(this, e) // Call on `this` as can still modify schema in these callbacks
             })
+            this.setCurrentVersion(lev)
             upgrade(e, oldVersion)
           })
         })
@@ -603,16 +611,21 @@ function upgradeneeded(cb) {
   }
 }
 
-function upgradeVersion(versionSchema, e, oldVersion, finishedCb) {
-  if (oldVersion >= versionSchema.version) return
+function upgradeVersion(version, e, oldVersion, finishedCb) {
+  if (oldVersion >= version) return
 
   const db = e.target.result
   const tr = e.target.transaction
 
-  versionSchema.earlyCallbacks.forEach((cb) => {
-    cb(e)
+  const lev = this.lastEnteredVersion()
+  this._versions[version].earlyCallbacks.forEach((cb) => {
+    this.setCurrentVersion(version) // Reset current version for callback to be able to operate on this version rather than the last added one
+    cb.call(this, e)
   })
+  this.setCurrentVersion(lev)
 
+  // Now we can cache as no more callbacks to modify this._versions data
+  const versionSchema = this._versions[version]
   versionSchema.dropStores.forEach((s) => {
     db.deleteObjectStore(s.name)
   })
